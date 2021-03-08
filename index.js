@@ -9,7 +9,7 @@ const server = hapi.server({
 
 server.route({
     method: 'GET',
-    path: '/all',
+    path: '/',
     handler: async (req, res) => await queryGetValues()
 });
 
@@ -19,6 +19,45 @@ server.route({
     handler: async (req, res) => await queryGetValuesById(req.params.id)
 });
 
+server.route({
+    method: 'GET',
+    path: '/fullinfo/{id}',
+    handler: async (req, res) => {
+        let result = {};
+
+        const personInfo = await queryGetAllValues(req.params.id);
+
+        result = personInfo[0];
+        result.movies = [];
+
+        personInfo.forEach(element => {
+            result.movies.push(element.title);
+        });
+
+        delete result.title;
+        return result;
+    }
+});
+
+// Rota para receber os parametros count= quantidade de itens  
+// Entre:  initialId e filnalID
+server.route({   
+    method: 'GET',
+    path: '/getPersons',   
+    handler: async (request,h) => {
+       const queryParam = request.query  
+       
+        if (queryParam.count != undefined){ //parametro count informado
+            await init(1,queryParam.count) //?count
+        }else 
+        if ( (queryParam.initialId != undefined) && (queryParam.finalId != undefined) ){  //parametro initialId e finalId Informado
+            await init(queryParam.initialId, queryParam.finalId)   //?initialId=1&finalId=2
+        } //nenhum parametro informado
+        return await queryGetValues()    
+        
+    }
+});
+
 const mysqlCon = mysql.createConnection({
     host: 'localhost',
     user: 'root',
@@ -26,7 +65,7 @@ const mysqlCon = mysql.createConnection({
     database: 'desafio'
 });
 
-const queryCreateTable = mysqlCon.query(`
+const queryCreatePersonTable = mysqlCon.query(`
     CREATE TABLE IF NOT EXISTS persons (
         id int(11) NOT NULL,
         name varchar(255),
@@ -40,11 +79,21 @@ const queryCreateTable = mysqlCon.query(`
     );
 `);
 
-const queryInsert = (values) => {
-    mysqlCon.query(`
-    INSERT INTO persons
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-    `, values)
+const queryCreateMoviesTable = mysqlCon.query(`
+    CREATE TABLE IF NOT EXISTS movies (
+        id int(11) NOT NULL AUTO_INCREMENT,
+        title varchar(255),
+        person_id varchar(50),
+        PRIMARY KEY (id)
+    );
+`);
+
+const queryInsertPersons = (values) => {
+    mysqlCon.query(`INSERT INTO persons VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`, values);
+};
+
+const queryInsertMovies = (values) => {
+    mysqlCon.query(`INSERT INTO movies (title, person_id) VALUES (?, ?)`, values);
 };
 
 const queryGetValues = async () => {
@@ -55,42 +104,80 @@ const queryGetValues = async () => {
 
 const queryGetValuesById = async (id) => {
     return new Promise ((resolve, reject) => {
-    mysqlCon.query(`
-    SELECT * 
-    FROM persons
-    WHERE id = ?    
-    `, id, (err, results, field) => {resolve(results)});
+    mysqlCon.query(`SELECT * FROM persons WHERE id = ?`, id, (err, results, field) => {resolve(results)});
     });
 };
 
-const fetchData = async (id) => {
-    let getting = await fetch(`https://swapi.dev/api/people/${id}`)
-    .then(response => response.json())
+const queryGetAllValues = async (id) => {
+    return new Promise ((resolve, reject) => {
+        mysqlCon.query(`
+        SELECT p.*, m.title
+        FROM persons p
+        LEFT JOIN movies m
+        ON p.id = m.person_id
+        WHERE p.id = ?
+        `, id, (err, results, field) => {resolve(results)});
+        });
+}
 
-    return [
+const fetchPersonData = async (id) => {
+
+    let data = {};
+    data.moviesInfo = [];
+    data.id = id;
+
+    let person = await fetch(`https://swapi.dev/api/people/${id}`)
+    .then(response => response.json());
+
+    let moviesArray = person.films;
+ 
+    for (let i = 0; i < moviesArray.length; i++) {
+        let movieInfo = await fetch(moviesArray[i])
+        .then(response => response.json());
+        data.moviesInfo.push(movieInfo.title);
+    };
+
+    data.person = [
         id,
-        getting.name, 
-        getting.height, 
-        getting.hair_color, 
-        getting.skin_color, 
-        getting.eye_color, 
-        getting.birth_year, 
-        getting.gender, 
-        getting.homeworld
+        person.name, 
+        person.height, 
+        person.hair_color, 
+        person.skin_color, 
+        person.eye_color, 
+        person.birth_year, 
+        person.gender, 
+        person.homeworld
     ];
+
+    return data ;
 };
 
-const init = async (dataFetchTimes) => {
+const init = async (initialId, finalId) => {
 
     mysqlCon.connect;
 
-    queryCreateTable;
-    
-    for (let index = 1; index <= dataFetchTimes; index++) {
-        queryInsert(await fetchData(index));
-    }
-  
+    queryCreatePersonTable;
+    queryCreateMoviesTable;
+
+    let index = initialId
+
+    for (index ; index <= finalId; index++) {
+        let fetchResult = await fetchPersonData(index)
+        
+        queryInsertPersons(fetchResult.person);
+        
+        for (let i = 0; i < fetchResult.moviesInfo.length; i++) {
+            queryInsertMovies([fetchResult.moviesInfo[i], fetchResult.id]);
+        };
+
+    };
+
+};
+
+
+const go = async () =>{
+    console.log('Servidor Iniciado')
     await server.start();
 }
 
-init(5);
+go()
