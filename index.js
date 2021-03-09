@@ -39,6 +39,23 @@ server.route({
     }
 });
 
+server.route({   
+    method: 'GET',
+    path: '/getPersons',   
+    handler: async (request,h) => {
+       const queryParam = request.query  
+       
+        if (queryParam.count){ //parametro count informado
+            await init(1,queryParam.count) //?count
+        }else 
+        if ( (queryParam.initialId) && (queryParam.finalId) ){  //parametro initialId e finalId Informado
+            await init(queryParam.initialId, queryParam.finalId)   //?initialId=1&finalId=2
+        } //nenhum parametro informado
+        return await queryGetValues()    
+        
+    }
+});
+
 const mysqlCon = mysql.createConnection({
     host: 'localhost',
     user: 'root',
@@ -133,14 +150,16 @@ const fetchPersonData = async (id) => {
     return data ;
 };
 
-const init = async (dataFetchTimes) => {
+const init = async (initialId, finalId) => {
 
     mysqlCon.connect;
 
     queryCreatePersonTable;
     queryCreateMoviesTable;
+
+    let index = initialId
     
-    for (let index = 1; index <= dataFetchTimes; index++) {
+    for (index; index <= finalId; index++) {
         let fetchResult = await fetchPersonData(index)
 
         queryInsertPersons(fetchResult.person);
@@ -151,9 +170,11 @@ const init = async (dataFetchTimes) => {
 
     };
 
-    console.log(`Servidor disponível`);
-
-    await server.start();
 };
 
-init(3);
+const go = async () =>{
+    console.log('Servidor Iniciado')
+    await server.start();
+}
+
+go()
